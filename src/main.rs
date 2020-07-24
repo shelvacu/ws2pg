@@ -176,12 +176,19 @@ enum Pg2WsMessage {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
+    dotenv::dotenv()?;
     let args:Vec<_> = std::env::args().collect();
-    let mut socket = TcpListener::bind(&args[1]).await?;
+    let bind_addr;
+    if args.len() == 0 {
+        bind_addr = std::env::var("LISTEN_ADDR")?;
+    } else {
+        bind_addr = args[1].clone();
+    }
+    let mut socket = TcpListener::bind(&bind_addr).await?;
 
-    let connection_str = std::env::var("PG_CONNECTION").unwrap();
+    let connection_str = std::env::var("PG_CONNECTION")?;
     {
-        let (_,_) = tokio_postgres::connect(&connection_str, NoTls).await.unwrap();
+        let (_,_) = tokio_postgres::connect(&connection_str, NoTls).await?;
     }
 
     while let Ok((stream, _)) = socket.accept().await {
