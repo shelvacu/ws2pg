@@ -179,7 +179,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     dotenv::dotenv()?;
     let args:Vec<_> = std::env::args().collect();
     let bind_addr;
-    if args.len() == 0 {
+    if args.len() < 2 {
         bind_addr = std::env::var("LISTEN_ADDR")?;
     } else {
         bind_addr = args[1].clone();
