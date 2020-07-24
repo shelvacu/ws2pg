@@ -1,4 +1,5 @@
 #![recursion_limit="1024"] // See https://github.com/rust-lang/futures-rs/issues/1917
+#![feature(never_type)]
 use std::error::Error;
 use std::collections::HashMap;
 use std::borrow::Cow;
@@ -54,6 +55,8 @@ enum SqlType {
     #[serde(alias = "varchar")]
     Text(String),
     Bytea(Vec<u8>),
+    Json(serde_json::Value),
+    Jsonb(serde_json::Value),
 }
 
 impl SqlType {
@@ -76,6 +79,8 @@ impl SqlType {
             Double,
             Text,
             Bytea,
+            Json,
+            Jsonb,
         }
     }
 }
@@ -88,7 +93,7 @@ impl FromSql<'_> for SqlType {
             };
         }
         //return ty == &Type::BOOL || ty == &Type::INT8;
-        return accepted_types!(BOOL, CHAR, INT2, INT4, OID, INT8, FLOAT4, FLOAT8, TEXT, BYTEA); 
+        return accepted_types!(BOOL, CHAR, INT2, INT4, OID, INT8, FLOAT4, FLOAT8, TEXT, BYTEA, JSON, JSONB); 
     }
 
     fn from_sql(ty: &Type, raw: &[u8]) -> Result<Self, Box<dyn Error + 'static + Sync + Send>> {
@@ -114,6 +119,8 @@ impl FromSql<'_> for SqlType {
             FLOAT8 Double f64,
             TEXT Text String,
             BYTEA Bytea Vec<u8>,
+            JSON Json serde_json::Value,
+            JSONB Jsonb serde_json::Value,
         }
         // if ty == &Type::BOOL {
         //     return Ok(Self::Bool(<bool as FromSql>::from_sql(ty, raw)?));
@@ -143,6 +150,7 @@ impl StringOrIntStatement {
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "ty")]
+#[serde(rename_all = "lowercase")]
 enum Ws2PgMessage {
     Query{statement: StringOrIntStatement, params: Vec<SqlType>, msgid: u32},
     Prepare{statement: String, msgid: u32},
@@ -159,6 +167,7 @@ impl Ws2PgMessage {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "ty")]
+#[serde(rename_all = "lowercase")]
 enum Pg2WsMessage {
     Results{rows: Vec<Vec<SqlType>>, msgid: u32},
     Prepared{id: u32, msgid: u32},
@@ -183,12 +192,20 @@ async fn main() -> Result<(), Box<dyn Error>> {
     return Ok(())
 }
 
+fn encode(stct: Pg2WsMessage) -> futures::future::Ready<Result<Message, anyhow::Error>> {
+    futures::future::ready(Ok(Message::binary(
+        rmp_serde::encode::to_vec_named(
+            &stct
+        ).unwrap()
+    )))
+}
+
 async fn accept_connection(stream: TcpStream, connection_str: String) {
     //let addr = stream.peer_addr().unwrap();
     let ws_stream = tokio_tungstenite::accept_async(stream).await.unwrap();
     let (pg_client, mut pg_connection) = tokio_postgres::connect(&connection_str, NoTls).await.unwrap();
     let (ws_sender, mut ws_receiver) = ws_stream.split();
-    let ws_sender_mut = Mutex::new(ws_sender);
+    let ws_sender_mut = Mutex::new(ws_sender.with(encode));
     let mut pg_stream = stream::poll_fn(move |cx| pg_connection.poll_message(cx)).map_err(|e| panic!(e));
     futures::join!{
         async { 
@@ -199,11 +216,7 @@ async fn accept_connection(stream: TcpStream, connection_str: String) {
                     tokio_postgres::AsyncMessage::Notification(notif) => {
                         let response = Pg2WsMessage::Notification{process_id: notif.process_id(), channel: notif.channel().into(), payload: notif.payload().into()};
                         ws_sender_mut.lock().await.send(
-                            Message::binary(
-                                rmp_serde::encode::to_vec_named(
-                                    &response
-                                ).unwrap()
-                            )
+                            response
                         ).await.unwrap_or_else(|_| panic!("could not send"))
                     },
                     _ => (),
@@ -219,11 +232,7 @@ async fn accept_connection(stream: TcpStream, connection_str: String) {
                 if res.is_text() {
                     let mut sender_lock = ws_sender_mut.lock().await;
                     sender_lock.send(
-                        Message::binary(
-                            rmp_serde::encode::to_vec_named(
-                                &Pg2WsMessage::Error{msg: "Must send binary frames, no text frames allows".to_string(), msgid: None}
-                            ).unwrap()
-                        )
+                        Pg2WsMessage::Error{msg: "Must send binary frames, no text frames allowed".to_string(), msgid: None}
                     ).await.unwrap();
                     sender_lock.close().await.unwrap();
                 } else if res.is_binary() {
@@ -234,11 +243,7 @@ async fn accept_connection(stream: TcpStream, connection_str: String) {
                         Err(e) => {
                             let mut sender_lock = ws_sender_mut.lock().await;
                             sender_lock.send(
-                                Message::binary(
-                                    rmp_serde::encode::to_vec_named(
-                                        &Pg2WsMessage::Error{msg: format!("Invalid syntax or structure: {}", &e), msgid: None}
-                                    ).unwrap()
-                                )
+                                Pg2WsMessage::Error{msg: format!("Invalid syntax or structure: {}", &e), msgid: None}
                             ).await.unwrap();
                             sender_lock.close().await.unwrap();
                             panic!();
@@ -259,7 +264,7 @@ async fn accept_connection(stream: TcpStream, connection_str: String) {
 
 async fn handle_msg(
     msg: Ws2PgMessage,
-    ws_sender_mut: &Mutex<impl Sink<Message> + std::marker::Unpin>,
+    ws_sender_mut: &Mutex<impl Sink<Pg2WsMessage> + std::marker::Unpin>,
     pg_client: &tokio_postgres::Client,
     prepared_statements: &mut HashMap<u32, Statement>,
     prepared_statement_ticker: &mut u32,
@@ -281,11 +286,7 @@ async fn handle_msg(
             }).collect();
             let response = Pg2WsMessage::Results{rows, msgid};
             ws_sender_mut.lock().await.send(
-                Message::binary(
-                    rmp_serde::encode::to_vec_named(
-                        &response
-                    ).unwrap()
-                )
+                response
             ).await.unwrap_or_else(|_| panic!("could not send"))
         },
         Ws2PgMessage::Prepare{statement, msgid} => {
@@ -294,11 +295,7 @@ async fn handle_msg(
             let result = pg_client.prepare(statement.as_str()).await?;
             prepared_statements.insert(id, result);
             ws_sender_mut.lock().await.send(
-                Message::binary(
-                    rmp_serde::encode::to_vec_named(
-                        &Pg2WsMessage::Prepared{id, msgid}
-                    ).unwrap()
-                )
+                Pg2WsMessage::Prepared{id, msgid}
             ).await.unwrap_or_else(|_| panic!("could not send"))
         },
     }
@@ -306,16 +303,12 @@ async fn handle_msg(
     Ok(())
 }
 
-async fn send_err(ws_sender_mut: &Mutex<impl Sink<Message> + std::marker::Unpin>, e: anyhow::Error, msgid: u32) {
+async fn send_err(ws_sender_mut: &Mutex<impl Sink<Pg2WsMessage> + std::marker::Unpin>, e: anyhow::Error, msgid: u32) {
     ws_sender_mut.lock().await.send(
-        Message::Binary(
-            rmp_serde::encode::to_vec_named(
-                &Pg2WsMessage::Error{
-                    msg: format!("{}", e),
-                    msgid: Some(msgid),
-                }
-            ).unwrap()
-        )
+        Pg2WsMessage::Error{
+            msg: format!("{}", e),
+            msgid: Some(msgid),
+        }
     ).await.unwrap_or_else(|_| panic!("could not send"));
 }
 
