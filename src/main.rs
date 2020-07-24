@@ -1,5 +1,4 @@
 #![recursion_limit="1024"] // See https://github.com/rust-lang/futures-rs/issues/1917
-#![feature(never_type)]
 use std::error::Error;
 use std::collections::HashMap;
 use std::borrow::Cow;
