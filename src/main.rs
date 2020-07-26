@@ -33,30 +33,30 @@ impl Error for IncorrectParamLength {}
 #[serde(rename_all = "lowercase")]
 enum SqlType {
     #[serde(alias = "boolean")]
-    Bool(bool),
+    Bool(Option<bool>),
     #[serde(alias = "int1")]
-    Char(i8),
+    Char(Option<i8>),
     #[serde(alias = "int2")]
     #[serde(alias = "smallserial")]
-    SmallInt(i16),
+    SmallInt(Option<i16>),
     #[serde(alias = "serial")]
     #[serde(alias = "int4")]
-    Int(i32),
-    Oid(u32),
+    Int(Option<i32>),
+    Oid(Option<u32>),
     #[serde(alias = "int8")]
     #[serde(alias = "bigserial")]
-    BigInt(i64),
+    BigInt(Option<i64>),
     #[serde(alias = "float4")]
-    Real(f32),
+    Real(Option<f32>),
     #[serde(alias = "float8")]
     #[serde(alias = "double precision")]
-    Double(f64),
+    Double(Option<f64>),
     #[serde(alias = "string")]
     #[serde(alias = "varchar")]
-    Text(String),
-    Bytea(Vec<u8>),
-    Json(serde_json::Value),
-    Jsonb(serde_json::Value),
+    Text(Option<String>),
+    Bytea(Option<Vec<u8>>),
+    Json(Option<serde_json::Value>),
+    Jsonb(Option<serde_json::Value>),
 }
 
 impl SqlType {
@@ -102,7 +102,7 @@ impl FromSql<'_> for SqlType {
                 if false {
                     unreachable!();
                 } $( else if ty == &Type::$c {
-                    return Ok(Self::$e(<$t as FromSql>::from_sql(ty, raw)?));
+                    return Ok(Self::$e(<Option<$t> as FromSql>::from_sql(ty, raw)?));
                 } )* else {
                     unreachable!();
                 }
