@@ -39,6 +39,7 @@ enum SqlType {
     #[serde(alias = "int2")]
     #[serde(alias = "smallserial")]
     SmallInt(i16),
+    #[serde(alias = "serial")]
     #[serde(alias = "int4")]
     Int(i32),
     Oid(u32),
@@ -199,6 +200,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 }
 
 fn encode(stct: Pg2WsMessage) -> futures::future::Ready<Result<Message, anyhow::Error>> {
+    dbg!(&stct);
     futures::future::ready(Ok(Message::binary(
         rmp_serde::encode::to_vec_named(
             &stct
