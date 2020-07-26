@@ -201,6 +201,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 }
 
 fn encode(stct: Pg2WsMessage) -> futures::future::Ready<Result<Message, anyhow::Error>> {
+    #[cfg(feature = "dbg")]
     dbg!(&stct);
     futures::future::ready(Ok(Message::binary(
         rmp_serde::encode::to_vec_named(
@@ -221,7 +222,10 @@ async fn accept_connection(stream: TcpStream, connection_str: String) {
             while let Some(res) = pg_stream.next().await {
                 let msg = res.unwrap();
                 match msg {
-                    tokio_postgres::AsyncMessage::Notice(notice) => { dbg!(notice); },
+                    tokio_postgres::AsyncMessage::Notice(notice) => { 
+                        #[cfg(feature = "dbg")]
+                        dbg!(notice);
+                    },
                     tokio_postgres::AsyncMessage::Notification(notif) => {
                         let response = Pg2WsMessage::Notification{process_id: notif.process_id(), channel: notif.channel().into(), payload: notif.payload().into()};
                         ws_sender_mut.lock().await.send(
@@ -236,6 +240,7 @@ async fn accept_connection(stream: TcpStream, connection_str: String) {
             let mut prepared_statements:HashMap<u32, Statement> = HashMap::new();
             let mut prepared_statement_ticker = 0;
             while let Some(res) = ws_receiver.next().await {
+                #[cfg(feature = "dbg")]
                 println!("{:?}", &res);
                 let res = res.unwrap();
                 if res.is_text() {
@@ -259,6 +264,7 @@ async fn accept_connection(stream: TcpStream, connection_str: String) {
                         },
                         Ok(parsed) => parsed,
                     };
+                    #[cfg(feature = "dbg")]
                     dbg!(&parsed);
                     let msgid = parsed.msgid();
                     match handle_msg(parsed, &ws_sender_mut, &pg_client, &mut prepared_statements, &mut prepared_statement_ticker).await {

@@ -18,3 +18,7 @@ futures = "0.3"
 anyhow = "1.0"
 serde_json = "*"
 dotenv = "*"
+
+[features]
+default = []
+dbg = []
