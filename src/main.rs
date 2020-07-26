@@ -193,6 +193,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     }
 
     while let Ok((stream, _)) = socket.accept().await {
+        stream.set_nodelay(true).unwrap();
         tokio::spawn(accept_connection(stream, connection_str.clone()));
     }
 
