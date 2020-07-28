@@ -166,6 +166,10 @@ impl FromSql<'_> for SqlType {
         //     unreachable!();
         // }
     }
+
+    fn from_sql_null(_: &Type) -> Result<Self, Box<dyn Error + Sync + Send>> {
+        Ok(Self::Null(SqlNull))
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
