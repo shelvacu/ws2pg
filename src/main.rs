@@ -230,7 +230,11 @@ async fn accept_connection(stream: TcpStream, connection_str: String) {
                         dbg!(notice);
                     },
                     tokio_postgres::AsyncMessage::Notification(notif) => {
+                        #[cfg(feature = "dbg")]
+                        dbg!(&notif);
                         let response = Pg2WsMessage::Notification{process_id: notif.process_id(), channel: notif.channel().into(), payload: notif.payload().into()};
+                        #[cfg(feature = "dbg")]
+                        dbg!(&response);
                         ws_sender_mut.lock().await.send(
                             response
                         ).await.unwrap_or_else(|_| panic!("could not send"))
