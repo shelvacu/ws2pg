@@ -13,7 +13,10 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio_tungstenite::tungstenite::Message;
 
 use tokio_postgres::{NoTls, Statement};
-use tokio_postgres::types::{Type, FromSql, ToSql};
+use tokio_postgres::types::{Type, FromSql, ToSql, IsNull};
+use tokio_postgres::types::private::BytesMut;
+
+use postgres_types::to_sql_checked;
 
 use serde_derive::{Serialize, Deserialize};
 
@@ -30,6 +33,25 @@ impl Display for IncorrectParamLength {
 }
 
 impl Error for IncorrectParamLength {}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct SqlNull;
+
+impl ToSql for SqlNull {
+    fn to_sql(
+        &self,
+        _ty: &Type,
+        _out: &mut BytesMut,
+    ) -> Result<IsNull, Box<dyn Error + Sync + Send>> {
+        return Ok(IsNull::Yes);
+    }
+
+    fn accepts(_ty: &Type) -> bool {
+       return true; 
+    }
+
+    to_sql_checked!();
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "ty", content = "val")]
@@ -60,7 +82,16 @@ enum SqlType {
     Bytea(Option<Vec<u8>>),
     Json(Option<serde_json::Value>),
     Jsonb(Option<serde_json::Value>),
+    #[serde(alias = "nil")]
+    Null(SqlNull),
 }
+
+// fn flatten_sql_type(i: Option<SqlType>) -> SqlType {
+//     match i {
+//         Some(s) => s,
+//         None => SqlType::Null(SqlNull),
+//     }
+// }
 
 impl SqlType {
     fn as_dyn(&self) -> &(dyn ToSql + Sync) {
@@ -68,6 +99,7 @@ impl SqlType {
             ( $( $t:ident, )* ) => {
                 match *self {
                     $( Self::$t(ref inner) => return inner as &(dyn ToSql + Sync), )*
+                    
                 }
             };
         }
@@ -84,6 +116,7 @@ impl SqlType {
             Bytea,
             Json,
             Jsonb,
+            Null,
         }
     }
 }
@@ -180,6 +213,7 @@ enum Pg2WsMessage {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
+    // dbg!(serde_json::to_string(&SqlType::Null(SqlNull))).unwrap();
     dotenv::dotenv()?;
     let args:Vec<_> = std::env::args().collect();
     let bind_addr;

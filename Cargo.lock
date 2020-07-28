@@ -1219,6 +1219,7 @@ dependencies = [
  "anyhow",
  "dotenv",
  "futures",
+ "postgres-types",
  "rmp",
  "rmp-serde",
  "serde",
