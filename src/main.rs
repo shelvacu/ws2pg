@@ -18,11 +18,14 @@ use tokio_postgres::types::{Type, FromSql, ToSql};
 use serde_derive::{Serialize, Deserialize};
 
 #[derive(Clone, Debug, Copy, PartialEq, Eq)]
-struct IncorrectParamLength;
+struct IncorrectParamLength{
+    got:usize,
+    expected:usize
+}
 
 impl Display for IncorrectParamLength {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Error: Incorrect param length")
+        write!(f, "Incorrect param length. Expected {}, got {}.", self.expected, self.got)
     }
 }
 
@@ -289,7 +292,7 @@ async fn handle_msg(
             let params_sql:Vec<_> = params.iter().map(|p| p.as_dyn()).collect();
             let statement = statement_any.into_statement(prepared_statements, pg_client).await?;
             if statement.params().len() != params.len() {
-                Err(IncorrectParamLength)?;
+                Err(IncorrectParamLength{got: params.len(), expected: statement.params().len()})?;
             }
             let result = pg_client.query(statement.as_ref(), &params_sql[..]).await?;
             let rows:Vec<_> = result.iter().map(|pg_row| {
