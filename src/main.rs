@@ -296,7 +296,8 @@ async fn accept_connection(stream: TcpStream, connection_str: String) {
                     sender_lock.close().await.unwrap();
                 } else if res.is_binary() {
                     //do stuff
-                    let mut c = std::io::Cursor::new(res.into_data());
+                    let data = res.into_data();
+                    let mut c = std::io::Cursor::new(&data);
                     let parsed_res:Result<Ws2PgMessage,_> = rmp_serde::decode::from_read(&mut c);
                     let parsed = match parsed_res {
                         Err(e) => {
@@ -305,7 +306,7 @@ async fn accept_connection(stream: TcpStream, connection_str: String) {
                                 Pg2WsMessage::Error{msg: format!("Invalid syntax or structure: {}", &e), msgid: None}
                             ).await.unwrap();
                             sender_lock.close().await.unwrap();
-                            panic!();
+                            panic!("syntax or structure error {:?}, message was {:#?}", &e, &data);
                         },
                         Ok(parsed) => parsed,
                     };
